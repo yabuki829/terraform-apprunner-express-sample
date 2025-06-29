@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.env
+
+# .tfstate files
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# .tfvars files
+*.tfvarsterraform/*.tfstate*
+terraform/.terraform.lock.hcl
