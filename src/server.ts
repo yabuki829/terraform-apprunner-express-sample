@@ -4,7 +4,7 @@ import express from 'express';
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.get('/health', (_, res) => {
+app.get('/health', (_, res: express.Response) => {
   res.send('OK');
 });
 
