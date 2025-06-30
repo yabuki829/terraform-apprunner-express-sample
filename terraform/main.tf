@@ -3,10 +3,10 @@ provider "aws" {
   region = var.aws_region
 }
 
-# 2. ESRのリポジトリの作成
-# この中にDocker imageをpush してApp runnerが使用する
-resource "aws_ecr_repository" "express_app" {
-  name = "express-apprunner"
+# 2. GitHub Connection for App Runner
+resource "aws_apprunner_connection" "github_connection" {
+  connection_name = "github-connection"
+  provider_type   = "GITHUB"
 }
 
 
@@ -15,25 +15,33 @@ resource "aws_apprunner_service" "express_service" {
   # サービス名の設定
   service_name = "express-apprunner"
 
-  # App Runner が ECR にアクセスするための IAM ロールを指定。
-  # 4で設定したIAMロールを指定 
   source_configuration {
     authentication_configuration {
-      access_role_arn = aws_iam_role.apprunner_ecr_access.arn
+      connection_arn = aws_apprunner_connection.github_connection.arn
     }
 
-    # App Runner が使う Docker イメージの起動ポートを 3000 に指定。
-    image_repository {
-      image_configuration {
-        port = "3000"
+    code_repository {
+      repository_url = var.github_repository_url
+      
+      source_code_version {
+        type  = "BRANCH"
+        value = "main"
       }
-      # App Runner が使用するイメージ（latestタグ）を指定。
-      # 上で作成した express_app のリポジトリを参照。
-      image_identifier      = "${aws_ecr_repository.express_app.repository_url}:latest"
-      image_repository_type = "ECR"
+
+      code_configuration {
+        configuration_source = "API"
+        
+        code_configuration_values {
+          runtime                 = "NODEJS_18"
+          build_command          = "npm install && npx prisma generate && npm run build"
+          start_command          = "npm start"
+          runtime_environment_variables = {
+            DATABASE_URL = "mysql://admin:${var.db_password}@${aws_db_instance.mysql.endpoint}/apprunner_db"
+          }
+        }
+      }
     }
 
-    # ECR イメージが更新されたら App Runner が自動デプロイするかどうか（true = 有効）。
     auto_deployments_enabled = true
   }
 
@@ -42,6 +50,9 @@ resource "aws_apprunner_service" "express_service" {
   instance_configuration {
     cpu    = "512"
     memory = "1024"
+    
+    # 環境変数の設定
+    instance_role_arn = aws_iam_role.apprunner_instance_role.arn
   }
 
   # VPC接続設定
@@ -139,8 +150,10 @@ resource "aws_db_subnet_group" "default" {
 resource "aws_db_instance" "mysql" {
   identifier         = "apprunner-db"
   engine             = "mysql"
+  engine_version     = "8.0"
   instance_class     = "db.t3.micro"
   allocated_storage  = 20
+  db_name            = "apprunner_db"
   username           = "admin"
   password           = var.db_password
   db_subnet_group_name = aws_db_subnet_group.default.name
@@ -156,5 +169,23 @@ resource "aws_apprunner_vpc_connector" "main" {
   vpc_connector_name = "apprunner-vpc-connector"
   subnets            = [aws_subnet.private_subnet_1.id, aws_subnet.private_subnet_2.id]
   security_groups    = [aws_security_group.rds_sg.id]
+}
+
+# -----------------------------
+# 5. App Runner Instance Role
+# -----------------------------
+resource "aws_iam_role" "apprunner_instance_role" {
+  name = "AppRunnerInstanceRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "tasks.apprunner.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
 }
 

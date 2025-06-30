@@ -11,3 +11,5 @@ dist
 # .tfvars files
 *.tfvarsterraform/*.tfstate*
 terraform/.terraform.lock.hcl
+
+/src/generated/prisma
