@@ -3,10 +3,14 @@ runtime: nodejs18
 build:
   commands:
     build:
-      - echo "Installing dependencies..."
+      - echo "npm installを行います"
       - npm install
-      - echo "Generating Prisma client..."
+      - echo "Prisma generateを行います"
       - npx prisma generate
+      - echo "Prisma db pushを行います"
+      - npx prisma db push
+      - echo "Prisma db seedを行います"
+      - npx prisma db seed
       - echo "Building application..."
       - npm run build
 run:
