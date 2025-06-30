@@ -48,12 +48,15 @@ resource "aws_apprunner_service" "express_service" {
   # App Runner のインスタンスリソース指定。
   # CPU：512（= 0.5 vCPU）、メモリ：1024MB（= 1GB）。
   instance_configuration {
-    cpu    = "512"
-    memory = "1024"
+    cpu    = "256"
+    memory = "512"
     
     # 環境変数の設定
     instance_role_arn = aws_iam_role.apprunner_instance_role.arn
   }
+
+  # 自動スケーリング設定（本番環境最小構成）
+  auto_scaling_configuration_arn = aws_apprunner_auto_scaling_configuration_version.min_production.arn
 
   # VPC接続設定
   network_configuration {
@@ -187,5 +190,19 @@ resource "aws_iam_role" "apprunner_instance_role" {
       Action = "sts:AssumeRole"
     }]
   })
+}
+
+# -----------------------------
+# 6. Auto Scaling Configuration
+# -----------------------------
+resource "aws_apprunner_auto_scaling_configuration_version" "min_production" {
+  auto_scaling_configuration_name = "min-production-config"
+  
+  min_size = 1  # 最小1インスタンス（本番では0は避ける）
+  max_size = 1 # 最大3インスタンス（コスト制限）
+  
+  tags = {
+    Name = "MinProduction"
+  }
 }
 
