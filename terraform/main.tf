@@ -33,7 +33,7 @@ resource "aws_apprunner_service" "express_service" {
         
         code_configuration_values {
           runtime                 = "NODEJS_18"
-          build_command          = "npm install && npx prisma generate && npm run build"
+          build_command          = "npm install && npx prisma generate && npx prisma db push && npx prisma db seed && npm run build"
           start_command          = "npm start"
           runtime_environment_variables = {
             DATABASE_URL = "mysql://admin:${var.db_password}@${aws_db_instance.mysql.endpoint}/apprunner_db"
