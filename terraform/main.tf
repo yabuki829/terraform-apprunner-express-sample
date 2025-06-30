@@ -33,7 +33,7 @@ resource "aws_apprunner_service" "express_service" {
         
         code_configuration_values {
           runtime                 = "NODEJS_18"
-          build_command          = "npm install && npx prisma generate && npx prisma db push && npx prisma db seed && npm run build"
+          build_command          = "npm install && npx prisma generate && npm run build"
           start_command          = "npm start"
           runtime_environment_variables = {
             DATABASE_URL = "mysql://admin:${var.db_password}@${aws_db_instance.mysql.endpoint}/apprunner_db"
@@ -193,7 +193,97 @@ resource "aws_iam_role" "apprunner_instance_role" {
 }
 
 # -----------------------------
-# 6. Auto Scaling Configuration
+# 6. 踏み台サーバー用パブリックサブネット
+# -----------------------------
+resource "aws_subnet" "public_subnet" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.3.0/24"
+  availability_zone       = "${var.aws_region}a"
+  map_public_ip_on_launch = true
+}
+
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public_subnet.id
+  route_table_id = aws_route_table.public.id
+}
+
+# -----------------------------
+# 7. 踏み台サーバー用セキュリティグループ
+# -----------------------------
+resource "aws_security_group" "bastion_sg" {
+  name   = "bastion_sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # 本番では自分のIPに制限
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# -----------------------------
+# 8. 踏み台EC2インスタンス
+# -----------------------------
+resource "aws_key_pair" "bastion_key" {
+  key_name   = "bastion-key"
+  public_key = var.ssh_public_key
+}
+
+resource "aws_instance" "bastion" {
+  ami           = "ami-0d52744d6551d851e" # Amazon Linux 2023 (ap-northeast-1)
+  instance_type = "t2.micro"
+  
+  subnet_id                   = aws_subnet.public_subnet.id
+  vpc_security_group_ids      = [aws_security_group.bastion_sg.id]
+  associate_public_ip_address = true
+  key_name                    = aws_key_pair.bastion_key.key_name
+
+  user_data = <<-EOF
+    #!/bin/bash
+    yum update -y
+    yum install -y mysql
+  EOF
+
+  tags = {
+    Name = "bastion-server"
+  }
+}
+
+# -----------------------------
+# 9. RDSセキュリティグループ更新（踏み台からのアクセス許可）
+# -----------------------------
+resource "aws_security_group_rule" "bastion_to_rds" {
+  type                     = "ingress"
+  from_port                = 3306
+  to_port                  = 3306
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.bastion_sg.id
+  security_group_id        = aws_security_group.rds_sg.id
+}
+
+# -----------------------------
+# 10. Auto Scaling Configuration
 # -----------------------------
 resource "aws_apprunner_auto_scaling_configuration_version" "min_production" {
   auto_scaling_configuration_name = "min-production-config"

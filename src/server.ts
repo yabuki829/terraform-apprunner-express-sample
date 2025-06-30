@@ -1,9 +1,22 @@
 // src/server.ts
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
+import { execSync } from 'child_process';
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Initialize database on startup
+async function initializeDatabase() {
+  try {
+    console.log('Pushing database schema...');
+    execSync('npx prisma db push', { stdio: 'inherit' });
+    console.log('Database schema pushed successfully');
+  } catch (error) {
+    console.error('Failed to push database schema:', error);
+  }
+}
+
 const prisma = new PrismaClient();
 
 app.use(express.json());
@@ -38,6 +51,7 @@ app.post('/products', async (req, res) => {
   }
 });
 
-app.listen(port, () => {
+app.listen(port, async () => {
   console.log(`Server running on port ${port}`);
+  await initializeDatabase();
 });

@@ -68,3 +68,68 @@ curl -X POST https://your-app-url/products \
   -H "Content-Type: application/json" \
   -d '{"name":"サンプル商品","description":"説明","price":1000,"stock":10}'
 ```
+
+## 踏み台サーバー経由でのデータベースアクセス
+
+### 1. SSH鍵ペア生成
+```bash
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/bastion_key -N ""
+```
+
+### 2. terraform.tfvarsにSSH公開鍵を追加
+```bash
+cd terraform
+cat ~/.ssh/bastion_key.pub   
+ssh_public_keyに値を設定
+```
+
+### 3. 踏み台サーバーを含めてデプロイ
+```bash
+terraform plan
+terraform apply
+```
+
+### 4. 踏み台サーバーにSSH接続
+```bash
+# 踏み台サーバーのパブリックIPを確認
+terraform output bastion_public_ip
+
+# SSH接続
+ssh -i ~/.ssh/bastion_key ec2-user@{bastion_public_ip}
+```
+
+### 5. 踏み台サーバーからRDSに接続
+```bash
+# RDSエンドポイントを確認
+echo "RDS_ENDPOINT=$(terraform output rds_endpoint)"
+
+# MySQL接続
+mysql -h {rds_endpoint} -u admin -p apprunner_db
+# パスワード: terraform.tfvarsのdb_password
+```
+
+### 6. SSH Tunneling経由でローカルからRDSアクセス
+```bash
+# ローカルPCから
+ssh -i ~/.ssh/bastion_key -L 3306:{rds_endpoint}:3306 ec2-user@{bastion_public_ip}
+
+# 別ターミナルでローカルから接続
+mysql -h 127.0.0.1 -P 3306 -u admin -p apprunner_db
+```
+
+### 7. データ投入例
+```sql
+-- 商品データ投入
+INSERT INTO Product (name, description, price, stock) VALUES
+('iPhone 15', '最新のiPhone', 128000, 10),
+('MacBook Pro', 'M3チップ搭載', 248000, 5),
+('AirPods Pro', 'ノイズキャンセリング機能付き', 39800, 20);
+
+-- データ確認
+SELECT * FROM Product;
+```
+
+## セキュリティ注意事項
+- 踏み台サーバーは作業完了後に削除推奨
+- SSH鍵は適切に管理
+- 本番環境では踏み台サーバーへのアクセスIPを制限
